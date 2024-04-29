@@ -1,0 +1,74 @@
+import os
+import pandas as pd
+import numpy as np
+
+
+# Directory where files are located
+directory_path = 'data/'
+
+# List all files in the directory
+all_files = os.listdir(directory_path)
+
+# Filter files based on the naming pattern and collect unique IDs
+ids = set()
+pattern_ct = '_5pCtoT_freq.txt'
+pattern_ga = '_3pGtoA_freq.txt'
+
+for file_name in all_files:
+    if pattern_ct in file_name:
+        ids.add(file_name.split(pattern_ct)[0])
+    elif pattern_ga in file_name:
+        ids.add(file_name.split(pattern_ga)[0])
+		
+		# Function to read and process each pair of files for a given ID
+def process_files(id):
+    file_ct_path = os.path.join(directory_path, f'{id}{pattern_ct}')
+    file_ga_path = os.path.join(directory_path, f'{id}{pattern_ga}')
+
+    data_ct = pd.read_csv(file_ct_path, sep='\t')
+    data_ga = pd.read_csv(file_ga_path, sep='\t')
+
+    # Take the first 9 values from each file
+    ct_values = data_ct['5pC>T'].head(9)
+    ga_values = data_ga['3pG>A'].head(9)
+
+    # Prepare the data for the DataFrame
+    data = list(ct_values) + list(ga_values) + [None]  # Assuming label is None for now
+
+    return data
+	
+	# Create a DataFrame with specified column names
+column_names = [
+    'CT_Position_1', 'CT_Position_2', 'CT_Position_3', 'CT_Position_4',
+    'CT_Position_5', 'CT_Position_6', 'CT_Position_7', 'CT_Position_8',
+    'CT_Position_9', 'GA_Position_1', 'GA_Position_2', 'GA_Position_3',
+    'GA_Position_4', 'GA_Position_5', 'GA_Position_6', 'GA_Position_7',
+    'GA_Position_8', 'GA_Position_9', 'label'
+]
+
+# Master DataFrame
+df_master = pd.DataFrame(columns=column_names)
+
+for id in ids:
+    data_row = process_files(id)
+    data_frame = pd.DataFrame([data_row], columns=column_names)
+    df_master = pd.concat([df_master, data_frame], ignore_index=True)
+
+
+df_master['label'] = "modern"
+
+from sklearn.model_selection import train_test_split
+import pandas as pd
+import numpy as np
+
+data = pd.read_csv('final_df_combined.csv')
+len(data)
+
+data.drop('Unnamed: 0', axis=1, inplace=True)
+final_df = pd.concat([df_master, data], ignore_index=True)
+final_df.label.value_counts()
+final_df.to_csv('complete_DNA.csv')
+len(final_df)
+data=final_df
+data['label'] = data['label'].astype('category').cat.codes
+data

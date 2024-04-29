@@ -1,0 +1,197 @@
+conda activate ancientDNA
+
+# Define paths and variables
+
+export fastqdump="/home1/09045/julia65/bin/sratoolkit.3.0.10-ubuntu64/bin"
+export HOME="/home1/09045/julia65"
+export SCRATCH="/scratch/09045/julia65"
+export TSV_FILE="/scratch/09045/julia65/scripts/DNA_Script_Test1.tsv"
+
+
+# Function to wait for all jobs to complete before proceeding
+wait_for_jobs() {
+    local user=$1
+    local last_state=""
+
+    while :; do
+        # Check the current state of the jobs
+        local current_state=$(squeue -u "$user" -o "%.2t" | grep -E "R|PD")
+
+        # Check if any jobs have started running since the last check
+        if [[ "$current_state" =~ R && "$last_state" =~ PD ]]; then
+            echo "A job for $user has started running."
+        fi
+
+        # If jobs are still running or pending, wait and check again
+        if [[ "$current_state" =~ R|PD ]]; then
+            echo "Jobs are still running or pending. Waiting..."
+            last_state=$current_state
+            sleep 7200 # Wait for 2 hours before checking again
+        else
+            echo "All jobs for $user have completed."
+            break
+        fi
+    done
+}
+
+# Loop through the TSV file containing species and BioProject IDs
+while IFS=$'\t' read -r species bioProject
+do
+    echo "Starting process for $species with BioProject $bioProject"
+
+    # Define the path to the reference genome
+    export GEN="$SCRATCH/${species}_ref_genome/genome.fna"
+	export BioProject="$bioProject"
+
+    # Check for the existence of the reference genome
+    if [ ! -f "$GEN" ]; then
+        echo "Reference genome for $species not found at $GEN"
+        continue
+    fi
+	
+	#clear any trailing spaces
+	bioProject="$(echo -e "${bioProject}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    # Step 1: Download FASTQ files
+    echo "Preparing FASTQ download script for $bioProject"
+    download_script=${bioProject}_download_fastq
+					#echo '!/bin/bash > $download_script ???
+    
+	# If this doesn't output SRR files, switch SRR to ERR
+    esearch -db sra -query $bioProject | efetch -format runinfo |cut -d "," -f 1 | grep SRR > $bioProject.SRR && esearch -db sra -query $bioProject | efetch -format runinfo > $bioProject.fullMeta.csv
+	for srr_id in `cat $bioProject.SRR`; do
+        echo "$fastqdump/fastq-dump-orig.3.0.10 $srr_id" >> $download_script
+    done
+	python3 $HOME/bin/ls6_launcher_creator.py -j $download_script -n $download_script -a IBN21018 -e juliajoseph65@gmail.com -t 02:00:00 -N 1 -w 1 -q development
+    sbatch $download_script.slurm
+    
+    # Wait for the download jobs to finish
+    wait_for_jobs "julia65"
+
+    # Step 2: Process FASTQ to BAM, sort, and index
+	
+# Initialize or clear the script file
+: > "$process_script"
+
+# Append commands to the script file for each FASTQ file
+>sam_script 
+for F in *.fastq; do
+    echo "bowtie2 --no-unal --end-to-end -x $GEN -U $F -S ${F/.trim}.master.local.sam && \
+samtools sort -O bam -o ${F/.trim}.master.local.sorted.bam ${F/.trim}.master.local.sam && samtools index -c ${F/.trim}.master.local.sorted.bam" >> sam_script; done
+
+
+# Execute additional commands as needed
+python3 $HOME/bin/ls6_launcher_creator.py -j "$process_script" -n "$process_script" -a IBN21018 -e juliajoseph65@gmail.com -t 01:00:00 -N 1 -w 10 -q development
+
+# Submit the script to Slurm
+sbatch "$process_script"
+
+    process_script=`${bioProject}_fastq_to_bam`
+    # echo "!/bin/bash" > "$process_script"
+    #echo "#SBATCH directives" >> $process_script
+	
+	
+	# Define the process_script variable if not already defined
+process_script_2="${bioProject}_fastq_to_bam2"
+
+: > "$process_script"
+
+# Assuming bioProject_premaps is already set and points to the directory containing the fastq files
+>map_script
+	for F in $bioProject_premaps/*.fastq; do
+    # Extract just the filename from the path
+  
+    # Use the filename for operations and prepend the directory path as needed
+echo "bowtie2 --no-unal --end-to-end -x $GEN -U $F -S ${bioProject_premaps}/${F/.trim}.master.local.sam && \
+samtools sort -O bam -o ${bioProject_premaps}/${F/.trim}.master.local.sorted.bam ${bioProject_premaps}/${F/.trim}.master.local.sam && samtools index -c ${bioProject_premaps}/${F/.trim}.master.local.sorted.bam" >> map_script; done
+
+python3 $HOME/bin/ls6_launcher_creator.py -j `$process_script_2` -n `$process_script_2` -a IBN21018 -e juliajoseph65@gmail.com -t 01:00:00 -N 1 -w 10 -q development
+
+# If this only produces SAM files, covert the SAM files to BAM files
+# If this doesn't output any files, matching rate is probably too low
+# cat the file.e* to check for any errors during processing
+    >$process_script for fastq_file in *.fastq; do
+        base_name=$(basename "$fastq_file" .fastq)
+        echo "bowtie2 --no-unal --end-to-end -x $GEN -U $fastq_file -S $base_name.sam" >> $process_script
+        echo "samtools sort -O bam -o $base_name.sorted.bam $base_name.sam" >> $process_script
+        echo "samtools index $base_name.sorted.bam" >> $process_script
+    done
+	python3 $HOME/bin/ls6_launcher_creator.py -j $process_script -n $process_script -a IBN21018 -e juliajoseph65@gmail.com -t 01:00:00 -N 1 -w 10 -q development
+    sbatch $process_script.slurm
+	
+	
+	bioProject_premaps="${bioProject}_premaps"
+
+# Create the directory
+mkdir -p "$bioProject_premaps"
+
+for file in *.sam; do
+    success=0
+    for attempt in {1..5}; do
+        if mv $file $bioProject_premaps/; then
+            echo "Moved $file successfully."
+            success=1
+            break
+        else
+            echo "Attempt $attempt to move $file failed. Retrying in 5 seconds..."
+            sleep 5
+        fi
+    done
+    if [[ $success -ne 1 ]]; then
+        echo "Failed to move $file after several attempts."
+    fi
+done
+
+
+
+for file in *.bai; do
+    success=0
+    for attempt in {1..5}; do
+        if rm $file; then
+            echo "Removed $file successfully."
+            success=1
+            break
+        else
+            echo "Attempt $attempt to move $file failed. Retrying in 5 seconds..."
+            sleep 5
+        fi
+    done
+    if [[ $success -ne 1 ]]; then
+        echo "Failed to move $file after several attempts."
+    fi
+done
+
+
+    # Wait for the processing jobs to finish
+    wait_for_jobs "julia65"
+
+    # Step 3: Filter BAM files
+    filter_script="${bioProject}_filter_bams.slurm"
+    # echo "!/bin/bash" > "$filter_script"
+    echo "#SBATCH directives" >> "$filter_script"
+    mkdir -p "${bioProject}_filtered_bams"
+    for bam_file in *.sorted.bam; do
+        base_name=$(basename "$bam_file" .sorted.bam)
+        echo "samtools view -bSq 20 $bam_file > ${bioProject}_filtered_bams/$base_name.filter20.sorted.bam" >> "$filter_script"
+        echo "samtools index ${bioProject}_filtered_bams/$base_name.filter20.sorted.bam" >> "$filter_script"
+    done
+    chmod +x "$filter_script"
+    sbatch "$filter_script"
+
+    # Wait for the filtering jobs to finish
+    wait_for_jobs "julia65"
+
+    # Step 4: Run mapDamage
+    mapdamage_script="mapdam_${bioProject}.slurm"
+    #echo "!/bin/bash" > "$mapdamage_script"
+    echo "#SBATCH directives" >> "$mapdamage_script"
+    for filtered_bam in ${bioProject}_filtered_bams/*.filter20.sorted.bam; do
+        echo "mapDamage -i $filtered_bam -r $GEN --no-stats --merge-reference-sequences" >> "$mapdamage_script"
+    done
+    chmod +x "$mapdamage_script"
+    sbatch "$mapdamage_script"
+
+    # Wait for the mapDamage jobs to finish
+    wait_for_jobs "julia65"
+
+    echo "Completed all steps for $species ($bioProject)."
+	done < "$TSV_FILE"

@@ -1,0 +1,45 @@
+export USER="julia65"
+export SERVER="ls6.tacc.utexas.edu"
+export REMOTE_PATH="/scratch/09045/julia65/horse_ref_genome"
+export LOCAL_PATH="/C/Users/juliajoseph65/Documents/horse_DNA/local_filename/modern horse dna"
+export central_directory = "/scratch/09045/julia65/horse_ref_genome/modern_dna"
+
+
+# Connect to the server and find directories, then download the required files
+ssh ${USER}@${SERVER} << EOF
+    # Find directories matching the specific pattern
+   directories=$(find ${REMOTE_PATH} -type d -name "results_*.fastq.master.local.filter20.sorted")
+    # Loop through each directory and scp the required files
+    for dir in \$directories; do
+        identifier=\$(echo \$dir | grep -oP 'results_\K[^/]*(?=\.fastq.master.local.filter20.sorted)')
+        file1="3pGtoA_freq.txt"
+        file2="5pCtoT_freq.txt"
+        scp "\$dir/\$file1" "${LOCAL_PATH}/\${identifier}_\$file1"
+        scp "\$dir/\$file2" "${LOCAL_PATH}/\${identifier}_\$file2"
+    done
+	
+	for dir in $directories; do
+    echo "Processing directory: $dir"
+    # Simplified extraction of identifier without PCRE
+    identifier=$(echo $dir | sed 's|.*/results_\([^/]*\)\.fastq.master.local.filter20.sorted|\1|')
+    
+    if [ -f "${dir}/3pGtoA_freq.txt" ]; then
+        echo "Moving 3pGtoA_freq.txt from $dir to ${central_directory}/$(basename ${dir})"
+        mv "${dir}/3pGtoA_freq.txt" "${central_directory}/${identifier}_3pGtoA_freq.txt"
+    else
+        echo "File 3pGtoA_freq.txt not found in $dir"
+    fi
+    
+    if [ -f "${dir}/5pCtoT_freq.txt" ]; then
+        echo "Moving 5pCtoT_freq.txt from $dir to ${central_directory}/$(basename ${dir})"
+        mv "${dir}/5pCtoT_freq.txt" "${central_directory}/${identifier}_5pCtoT_freq.txt"
+    else
+        echo "File 5pCtoT_freq.txt not found in $dir"
+    fi
+done
+
+EOF
+
+#Go to wherever you want to deposit these files on your local machine
+
+scp -r julia65@ls6.tacc.utexas.edu:/scratch/09045/julia65/horse_ref_genome/modern_dna .

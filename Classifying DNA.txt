@@ -1,0 +1,671 @@
+## Part 1: Linear Regression on Basic Model
+BasicAgeMisincorp.tsv contains three columns of tab separated values. AgeBP=age of the sample in years before present, CT_Position_1=the C->T misincorporation rate at the terminal base, GA_Position_1=the G->A misincorporation rate on the complementary DNA strand. These correspond to the red and blue lines in the map damage plots. Based on this data, we would like to estimate the age of the sample which can be used for further identification or analysis.
+
+
+import pandas as pd
+import matplotlib.pyplot as plt
+from google.colab import files
+
+
+df = pd.read_csv("BasicAgeMisincorp.tsv", sep='\s+')
+df.head()
+rows, columns = df.shape
+print(rows, columns)
+
+
+# function to calculate adjusted r2
+def get_adj_r2(r2, n, p):
+    return (1-(1-r2)*((n-1)/(n-p-1)))
+
+# Now, I am looking to see if there is any "correlation" amongst the data
+df = df.astype(float)
+df.corr()
+
+
+
+# Scatter plot for CT_Position_1 vs. ageBP
+plt.scatter(df['CT_Position_1'], df['ageBP'],
+            marker='x', label='CT_Position_1')
+
+# Scatter plot for GA_Position_1 vs. ageBP on the same figure
+plt.scatter(df['GA_Position_1'], df['ageBP'],
+            marker='o', label='GA_Position_1')  # Changed marker for differentiation
+
+plt.title('ageBP across CT_Position_1 and GA_Position_1', fontsize=14)
+plt.xlabel('Position Value', fontsize=14)
+plt.ylabel('ageBP', fontsize=14)
+plt.legend()
+plt.show()
+
+
+
+x = df[['GA_Position_1', 'CT_Position_1']]
+y = df['ageBP']
+#y = y.values.reshape(-1,1).astype(int)
+y
+
+
+
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import cross_val_score
+
+scores = cross_val_score(LinearRegression(), x, y,scoring='r2', cv = 5)
+total = 0
+for n in scores:
+  total += n
+avg = (total/5)
+rows = len(df.index)
+print(get_adj_r2(avg, rows, 2))
+
+
+from sklearn.model_selection import train_test_split
+
+GA_feature = df['GA_Position_1']
+CT_feature = df['CT_Position_1']
+GA_feature = GA_feature.values.reshape(-1,1).astype(float)
+CT_feature = CT_feature.values.reshape(-1,1).astype(float)
+test_train_GA = train_test_split(GA_feature, y,test_size=.2, train_size=.8, random_state = 33)
+test_train_CT = train_test_split(CT_feature, y,test_size=.2, train_size=.8, random_state = 33)
+
+lin_reg_GA = LinearRegression().fit(test_train_GA[0],test_train_GA[2])
+lin_reg_CT = LinearRegression().fit(test_train_CT[0],test_train_CT[2])
+print("Intercept of GA miscincorporation vs AgeBP", lin_reg_GA.intercept_)
+print("Slope of GA miscincorporation vs AgeBP", lin_reg_GA.coef_)
+print("Intercept of CT miscincorporation vs AgeBP", lin_reg_CT.intercept_)
+print("Slope of CT miscincorporation vs AgeBP", lin_reg_CT.coef_)
+
+
+
+import sklearn.metrics as metrics
+
+predictions_GA = lin_reg_GA.predict(test_train_GA[1])
+print("R2 score of GA misincorporation vs AgeBP", metrics.r2_score(test_train_GA[3], predictions_GA))
+print("MAE score of GA misincorporation vs AgeBP",metrics.mean_absolute_error(test_train_GA[3], predictions_GA))
+print("MSE score of GA misincorporation vs AgeBP",metrics.mean_squared_error(test_train_GA[3], predictions_GA))
+print("RMSE score of GA misincorporation vs AgeBP ", metrics.mean_squared_error(test_train_GA[3], predictions_GA, squared = False))
+
+predictions_CT = lin_reg_CT.predict(test_train_CT[1])
+print("\nR2 score of CT misincorporation vs AgeBP", metrics.r2_score(test_train_CT[3], predictions_CT))
+print("MAE score of CT misincorporation vs AgeBP",metrics.mean_absolute_error(test_train_CT[3], predictions_CT))
+print("MSE score of CT misincorporation vs AgeBP",metrics.mean_squared_error(test_train_CT[3], predictions_CT))
+print("RMSE score of CT misincorporation vs AgeBP", metrics.mean_squared_error(test_train_CT[3], predictions_CT, squared = False))
+
+The R2 values for GA misincorporation vs AgeBP and CT misincorporation vs AgeBP are considerably better than when included both features in the model.Let's see what the best fit line looks like with the test data and line plot the model predictions of the test data. Based on the scoring metrics, it seems that MAE is the best metric to use. MAE (Mean Absolute Error) is a robust metric when treat all errors should be treated uniformaly uniformly. It's particularly useful when a dataset, like BasicAgeMisincorp.tsv, has with many outliers, or you are concerned that squaring the errors might overemphasize the significance of large errors. MAE provides a more intuitive measure of average error magnitude.
+
+plt.scatter(test_train_GA[1],test_train_GA[3],
+            marker = 'x')
+plt.title('X_Test_GA v Y_Test_GA', fontsize=14)
+plt.xlabel('X-Test_GA', fontsize=14)
+plt.ylabel('Y_Test_GA ($)', fontsize=14)
+plt.plot(test_train_GA[1],predictions_GA )
+plt.show()
+
+plt.scatter(test_train_CT[1],test_train_CT[3],
+            marker = 'x')
+plt.title('X_Test_CT v Y_Test_CT', fontsize=14)
+plt.xlabel('X-Test_CT', fontsize=14)
+plt.ylabel('Y_Test_CT ($)', fontsize=14)
+plt.plot(test_train_CT[1],predictions_CT )
+plt.show()
+
+
+df2 = pd.read_csv("FullAgeMisincorp.tsv", sep='\s+')
+df2.head()
+rows, columns = df2.shape
+print(rows, columns)
+
+
+x2 = df2.iloc[:, :18]  # Selects the first 18 columns
+y2 = df2['ageBP']
+y2 = y2.values.reshape(-1, 1)
+y2
+
+from sklearn.model_selection import cross_val_score, cross_val_predict
+scores = cross_val_score(LinearRegression(), x2, y2, scoring='neg_mean_absolute_error', cv = 5)
+avg = -scores.mean()
+print("avg using neg_mean_absolute_error scoring metric:", avg)
+
+scores2 = cross_val_score(LinearRegression(), x2, y2, scoring='r2', cv = 5)
+avg2 = scores2.mean()
+rows = len(df2.index)
+adj_r2 = get_adj_r2(avg, rows, 2)
+print("avg using r2 scoring metric", adj_r2)
+
+
+
+
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import get_scorer_names
+import numpy as np
+
+
+param_grid = {'max_depth': np.arange(1, 20)}
+# Initializing the regressor
+tree_regressor = DecisionTreeRegressor(random_state=1)
+
+# Setting up the grid search with cross-validation
+grid_search = GridSearchCV(tree_regressor, param_grid, cv=5, scoring='neg_mean_squared_log_error')
+grid_search2 = GridSearchCV(tree_regressor, param_grid, cv=5, scoring='r2')
+x3 = df2.iloc[:, :18]  # Selects the first 18 columns
+y3 = df2['ageBP']
+
+# Fitting the grid search to the data
+grid_search.fit(x3, y3)
+grid_search2.fit(x3, y3)
+
+# Finding the best parameters and the corresponding score
+best_params = grid_search.best_params_
+best_score = grid_search.best_score_
+best_params2 = grid_search2.best_params_
+best_score2 = grid_search2.best_score_
+
+print(f"Best Parameters: {best_params}")
+print(f"Best Score Neg Mean Squared Log Error: {best_score}")
+print(f"Best Parameters R2: {best_params2}")
+print(f"Best Score R2: {best_score2}")
+
+#print(f"Best Score Neg Mean Absolute Error: {best_score2}")
+
+
+#Decision Tree: Predicting Modern and Ancient DNA age
+
+data_regre = pd.read_csv("SimulatedAgeMisincorp.tsv", sep='\s+')
+param_grid = {'max_depth': np.arange(1, 20)}
+# Initializing the regressor
+tree_regressor = DecisionTreeRegressor(random_state=1)
+
+# Setting up the grid search with cross-validation
+grid_search = GridSearchCV(tree_regressor, param_grid, cv=5, scoring='neg_mean_squared_log_error')
+grid_search2 = GridSearchCV(tree_regressor, param_grid, cv=5, scoring='r2')
+x3 = data_regre.iloc[:, :18]  # Selects the first 18 columns
+y3 = data_regre['ageBP']
+
+# Fitting the grid search to the data
+grid_search.fit(x3, y3)
+grid_search2.fit(x3, y3)
+
+# Finding the best parameters and the corresponding score
+best_params = grid_search.best_params_
+best_score = grid_search.best_score_
+best_params2 = grid_search2.best_params_
+best_score2 = grid_search2.best_score_
+
+print(f"Best Parameters Neg Mean Squared Log Error: {best_params}")
+print(f"Best Score Neg Mean Squared Log Error: {best_score}")
+print(f"Best Parameters R2: {best_params2}")
+print(f"Best Score R2: {best_score2}")
+
+
+
+
+#Part 3: Classifying Ancient vs Modern DNA
+##Decision Tree
+
+import pandas as pd
+import matplotlib.pyplot as plt
+processed_datasets = {}
+data = pd.read_csv("SimulatedAgeMisincorp.tsv", sep='\s+')
+data['label'] = data['ageBP'].apply(lambda x: 'ancient' if x > 0 else 'modern')
+data = data.drop('ageBP', axis=1)
+data.head()
+class_col = data['label']
+label_array = class_col.values.ravel()
+features = data.drop('label', axis=1)
+processed_datasets = {}
+processed_datasets['simulated'] = {'features': features, 'label': label_array}
+
+
+
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import get_scorer_names
+import numpy as np
+from sklearn.model_selection import cross_val_score, cross_val_predict
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import cross_val_score
+import pandas as pd
+import matplotlib.pyplot as plt
+
+
+data_con = pd.read_csv("combined_dna_dataset.csv", sep=',')
+data_con.drop('Unnamed: 0', axis=1, inplace=True)
+data_con.head()
+features_con = data_con.drop('label', axis=1)
+labels_con = data_con['label']
+features_con.shape[0:2]
+processed_datasets['contaminated'] = {'features': features_con, 'label': labels_con}
+
+data_anc = pd.read_csv("complete_DNA.csv", sep=',')
+data_anc.drop('Unnamed: 0', axis=1, inplace=True)
+data_anc['label'] = data_anc['label'].astype('category').cat.codes
+features_anc = data_anc.drop('label', axis=1)
+labels_anc = data_anc['label']
+processed_datasets['ancient'] = {'features': features_anc, 'label': labels_anc}
+data_anc.head()
+
+
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.tree import plot_tree
+from sklearn.metrics import accuracy_score
+
+def classify_and_plot(data_dict):
+    features = data_dict['features']
+    label = data_dict['label']
+
+    # Split the dataset into training and testing sets
+    X_train, X_test, y_train, y_test = train_test_split(
+        features, label, test_size=0.2, train_size=0.8, random_state=33
+    )
+
+    # Initialize the Decision Tree Classifier
+    dtc = DecisionTreeClassifier(criterion='entropy', max_depth=2)
+    dtc.fit(X_train, y_train)
+
+    # Plot the decision tree
+    plt.figure(figsize=(12, 8))
+    plot_tree(dtc, filled=True)
+    plt.show()
+
+    # Predict on the test set and calculate accuracy
+    predicted = dtc.predict(X_test)
+    accuracy = accuracy_score(y_test, predicted)
+
+    return accuracy
+
+for name, data in processed_datasets.items():
+    print(f"Processing dataset: {name}")
+    accuracy = classify_and_plot(data)
+    print(f"Accuracy for {name}: {accuracy:.2f}")
+
+
+
+from sklearn.metrics import confusion_matrix, classification_report
+def train_and_evaluate(features, labels):
+    # Split the dataset into training and testing sets
+    X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=33)
+
+    # Define the parameter grid for GridSearchCV
+    param = {
+        'max_depth': [5, 10, 15, 20],
+        'max_features': [5, 10, 15],
+        'min_samples_leaf': [5, 10, 15, 20]
+    }
+
+    # Initialize the DecisionTreeClassifier
+    dtc = DecisionTreeClassifier()
+
+    # Set up GridSearchCV
+    grid_search = GridSearchCV(dtc, param_grid=param, scoring='accuracy', cv=5)
+    grid_search.fit(X_train, y_train)
+
+    # Evaluate using nested cross-validation
+    nested_score = cross_val_score(grid_search, X=features, y=labels, cv=5)
+
+    # Best parameters and nested CV accuracy
+    print(f"Best max_depth: {grid_search.best_params_['max_depth']}")
+    print(f"Best max_features: {grid_search.best_params_['max_features']}")
+    print(f"Best min_samples_leaf: {grid_search.best_params_['min_samples_leaf']}")
+    print(f"Nested Cross-Validation Accuracy: {nested_score.mean()}")
+
+    # Retrain the best model on the full training set
+    best_model = grid_search.best_estimator_
+    best_model.fit(X_train, y_train)
+
+    # Predict on the test set
+    predicted_labels = best_model.predict(X_test)
+
+    # Compute and display the confusion matrix and accuracy
+    conf_matrix = confusion_matrix(y_test, predicted_labels)
+    accuracy = accuracy_score(y_test, predicted_labels)
+    print("Confusion Matrix:")
+    print(conf_matrix)
+    print("Accuracy on the test set:", accuracy)
+    print("Classification Report:")
+    print(classification_report(y_test, predicted_labels))
+
+
+for name, data in processed_datasets.items():
+  print(f"Processing dataset: {name}")
+  features = processed_datasets[name]['features']
+  labels= processed_datasets[name]['label']
+  train_and_evaluate(features, labels)
+  print(f"Accuracy for {name}: {accuracy:.2f}")
+
+
+
+
+##Random Forest
+
+
+from sklearn.ensemble import RandomForestClassifier
+def train_and_evaluate_rf(features, labels):
+    # Split data into training and testing sets
+    X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=42)
+
+    # Define hyperparameters to tune
+    param2 = {
+        'max_depth': [5, 10, 15, 20],
+        'max_features': [5, 10, 15],
+        'min_samples_leaf': [5, 10, 15, 20],
+        'n_estimators': [10, 50, 100]  # Number of trees in the forest
+    }
+
+    # Initialize GridSearchCV with RandomForestClassifier
+    grid_search2 = GridSearchCV(estimator=RandomForestClassifier(criterion='entropy'),
+                                param_grid=param2,
+                                scoring='accuracy',
+                                cv=5)
+    grid_search2.fit(X_train, y_train)
+
+    # Predict on the test set
+    y_pred = grid_search2.predict(X_test)
+
+    # Print the best parameters and classification report
+    print("Best parameters:", grid_search2.best_params_)
+    print("Classification Report for the Test Set:")
+    print(classification_report(y_test, y_pred))
+
+    # Nested cross-validation to evaluate the model
+    nested_score = cross_val_score(grid_search2, X=features, y=labels, cv=5)
+    print("Nested Cross-Validation Accuracy:", nested_score.mean())
+
+
+for name, data in processed_datasets.items():
+    print(f"Processing dataset: {name}")
+    features = processed_datasets[name]['features']
+    labels= processed_datasets[name]['label']
+    train_and_evaluate_rf(features, labels)
+
+X_train, X_test, y_train, y_test = train_test_split(features, label_array, test_size=0.2, random_state=42)
+
+# Instantiate the classifier
+classifier = RandomForestClassifier(n_estimators=100, random_state=42)
+
+# Train the classifier
+classifier.fit(X_train, y_train)
+
+# Make predictions on the test set
+y_pred = classifier.predict(X_test)
+
+# Generate a classification report to see the label corresponding to each value
+report = classification_report(y_test, y_pred, output_dict=True)
+
+# The classification report provides a text summary of the precision, recall, F1 score for each class
+print(classification_report(y_test, y_pred))
+
+# To print the corresponding label for each class value, use the classifier's classes_ attribute
+label_mapping = {i: label for i, label in enumerate(classifier.classes_)}
+print("Label mapping:", label_mapping)
+
+
+##k-Nearest Neighboy (KNN)
+
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import Pipeline
+
+def classify_and_evaluate(features, labels):
+    scaler = StandardScaler()
+    pca = PCA()
+    knn = KNeighborsClassifier()
+    pipeline = Pipeline(steps=[('scaler', scaler), ('pca', pca), ('knn', knn)])
+
+    param_grid = {
+        'pca__n_components': list(range(5, 18)),
+        'knn__n_neighbors': list(range(1, 25))
+    }
+
+    grid_search = GridSearchCV(pipeline, param_grid=param_grid, cv=5)
+    grid_search.fit(features, labels)
+
+    # Print the best parameters and the best score found by GridSearch
+    print("Best number of dimensions:", grid_search.best_params_['pca__n_components'])
+    print("Best number of neighbors:", grid_search.best_params_['knn__n_neighbors'])
+    print("Best accuracy:", grid_search.best_score_)
+
+    # Perform nested cross-validation
+    nested_scores = cross_val_score(grid_search, X=features, y=labels, cv=5)
+    print("Nested Cross-Validation Accuracy: ", nested_scores.mean())
+
+    return nested_scores.mean()
+
+
+for name, data in processed_datasets.items():
+    print(f"Processing dataset: {name}")
+    features = processed_datasets[name]['features']
+    labels= processed_datasets[name]['label']
+    accuracy = classify_and_evaluate(features, labels)
+    print(f"Accuracy for {name}: {accuracy:.2f}")
+
+
+##Naive Bayes (NB)
+This algorithm implements the Gaussian Naive Bayes algorithm for classification. This means that the liklihood of continuous features is estimated using a Gaussian distribution. On top of evaluating its accuracy, I can perform cross validation and generate a classification report that displays the precision, recall, support and F1 score for each class
+
+from sklearn.naive_bayes import GaussianNB
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import classification_report
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import confusion_matrix, classification_report
+
+for name, dataset in processed_datasets.items():
+    features = dataset['features']
+    labels = dataset['label']
+
+    naive_bayes = GaussianNB()
+    scores = cross_val_score(naive_bayes, X=features, y=labels, cv=10)
+    print(f"Processing dataset: {name}")
+    print("Accuracy:", scores.mean())
+
+    naive_bayes_predict = cross_val_predict(naive_bayes, X=features, y=labels, cv=10)
+    print("Confusion Matrix:")
+    print(confusion_matrix(labels, naive_bayes_predict))
+    print("Classification Report:")
+    print(classification_report(labels, naive_bayes_predict))
+
+
+
+#Support Vector Machines (SVM): Classifying Ancient vs Modern DNA
+
+from sklearn.svm import SVC
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import GridSearchCV, cross_val_predict
+from sklearn.metrics import accuracy_score, classification_report
+for name, dataset in processed_datasets.items():
+    features = dataset['features']
+    labels = dataset['label']
+
+    # Setup the pipeline
+    scaler = StandardScaler()
+    pca = PCA()
+    svc = SVC()
+    pipeline = Pipeline([
+        ('scaler', scaler),
+        ('pca', pca),
+        ('svc', svc)
+    ])
+
+    # Define the parameter grid
+    param = {
+        'pca__n_components': list(range(2, 15)),
+        'svc__kernel': ['linear', 'rbf', 'poly']
+    }
+
+    # Initialize GridSearchCV
+    grid_search = GridSearchCV(pipeline, param_grid=param, cv=5)
+    grid_search.fit(features, labels)
+
+    # Predict and evaluate
+    predictions = cross_val_predict(grid_search, features, labels, cv=10)
+    accuracy = accuracy_score(labels, predictions)
+    report = classification_report(labels, predictions)
+
+    # Print results for each dataset
+    print(f"Processing dataset: {name}")
+    print("Best parameters:", grid_search.best_params_)
+    print("Accuracy:", accuracy)
+    print("Classification Report:\n", report)
+
+#Neural Networks (NN): Classifying Ancient vs Modern DNA
+
+from sklearn.metrics import get_scorer_names
+import numpy as np
+from sklearn.model_selection import cross_val_score, cross_val_predict
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
+from sklearn.metrics import confusion_matrix, accuracy_score, classification_report
+from sklearn.neural_network import MLPClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.pipeline import Pipeline
+pipeline = Pipeline([
+    ('scaler', StandardScaler()),
+    ('mlp', MLPClassifier(learning_rate_init=0.001))
+])
+
+param = {
+    'mlp__hidden_layer_sizes': [(30,), (40,), (50,), (60,)],
+    'mlp__activation': ['logistic', 'tanh', 'relu']
+}
+
+grid_search = GridSearchCV(pipeline, param_grid=param, cv=5 )
+grid_search.fit(features, label_array)
+scores = cross_val_score(grid_search, features, label_array, cv=5)
+print("Best hidden layer size:", grid_search.best_params_['mlp__hidden_layer_sizes'])
+print("Best activation function:", grid_search.best_params_['mlp__activation'])
+print("Accuracy:", scores.mean())
+
+
+
+# approach 1
+
+df1 = pd.read_csv('SimulatedAgeMisincorp.tsv', sep='\s+')
+df2 = pd.read_csv('PredictTheseMiscrobes.txt', sep='\t')
+df1.insert(0, 'SampleID', range(1, len(df1) + 1))  # Adding sequential IDs as an example
+df1['label'] = df1['ageBP'].apply(lambda x: 'ancient' if x > 0 else 'modern')
+
+
+# Concatenate both DataFrames if that's the goal
+df_combined = pd.concat([df1, df2], ignore_index=True)
+df_combined.fillna(0, inplace=True)
+
+df_combined.drop(['ageBP','SampleID'], axis = 1, inplace=True)
+# Check for alignment and consistency in the structure
+#300 contaminated
+#50 modern
+#50 ancient
+df_combined.head()
+
+df_combined.to_csv('combined_dna_dataset.csv')
+
+df_combined.shape
+
+df_combined.label.value_counts()
+
+X = df_combined.drop('label', axis = 1)
+y = df_combined['label']
+
+from sklearn.preprocessing import LabelEncoder
+le = LabelEncoder()
+y = le.fit_transform(y)
+y
+
+le.inverse_transform([2])
+
+from sklearn.model_selection import train_test_split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33, random_state=42)
+
+from sklearn.preprocessing import StandardScaler
+scaler = StandardScaler()
+scaler.fit(X_train)
+X_train = scaler.transform(X_train)
+X_test = scaler.transform(X_test)
+
+from sklearn.neighbors import KNeighborsClassifier
+model = KNeighborsClassifier(n_neighbors=9)
+
+model.fit(X_train, y_train)
+
+y_pred = model.predict(X_test)
+
+from sklearn.metrics import classification_report
+print(classification_report(y_test, y_pred))
+
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import get_scorer_names
+import numpy as np
+from sklearn.model_selection import cross_val_score, cross_val_predict
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
+from sklearn.metrics import confusion_matrix, accuracy_score, classification_report
+from sklearn.neural_network import MLPClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
+from sklearn.metrics import f1_score
+
+confusion_matrix(y_test, y_pred)
+
+from sklearn.svm import SVC
+
+model = SVC()
+model.fit(X_train, y_train)
+y_pred = model.predict(X_test)
+print(classification_report(y_test, y_pred))
+
+import keras
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import classification_report
+from keras.models import Sequential
+from keras.layers import Dense
+from sklearn.model_selection import train_test_split
+from keras.optimizers import Adam
+
+
+
+for name, dataset in processed_datasets.items():
+    print(f"Processing dataset: {name}")
+    features = dataset['features']
+    label_encoder = LabelEncoder()
+    labels = label_encoder.fit_transform(dataset['label'])
+
+    # Split the data into training and testing sets
+    X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=42)
+
+    model = Sequential([
+    Dense(32, input_dim=features.shape[1], activation='relu'),
+    Dense(16, activation='relu'),
+    Dense(3, activation='softmax')  # Output layer for 3 classes
+])
+
+    # Compile the model
+    model.compile(optimizer=Adam(learning_rate=0.003), loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+
+    # Train the model
+    model.fit(X_train, y_train, validation_split=0.2, epochs=500, batch_size=10, verbose=0)
+
+    # Evaluate the model on the test data
+    train_score = model.evaluate(X_train, y_train, verbose=0)
+    test_score = model.evaluate(X_test, y_test, verbose=0)
+    print(f"Training score for {name}: {train_score}")
+    print(f"Test score for {name}: {test_score}")
+
+    # Make predictions and evaluate using classification report
+    y_pred = model.predict(X_test)
+    y_pred = np.argmax(y_pred, axis=1)  # Convert probabilities to class labels
+    print(classification_report(y_test, y_pred))
+
+
+
